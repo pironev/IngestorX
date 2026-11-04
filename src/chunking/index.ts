@@ -1,34 +1,29 @@
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import type { ChunkingMode, SourceDocument } from '../types.js';
+import { Document } from '@langchain/core/documents';
+import type { ChunkingMode } from '../types.js';
+import type { SourceDocument } from '../types.js';
+import { ChonkieChunker } from './chonkie.js';
+import { LangChainChunker } from './langchain.js';
 
-export async function chunkDocuments(
-  documents: SourceDocument[],
+export interface TextChunk {
+  text: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface TextChunker {
+  chunk(document: SourceDocument): Promise<TextChunk[]>;
+}
+
+export function createChunker(
   mode: ChunkingMode,
   chunkSize: number,
   chunkOverlap: number,
-): Promise<string[]> {
+): TextChunker {
   if (mode === 'chonkie') {
-    // Placeholder for Chonkie.js integration.
-    // Example:
-    // const chunks = await chonkieChunk(documents.map(d => d.pageContent).join('\n\n'));
-    // return chunks.map((chunk: any) => typeof chunk === 'string' ? chunk : chunk.text ?? '');
-    throw new Error(
-      'Chonkie.js integration is not implemented yet. Use CHUNKING_MODE=langchain or add a Chonkie wrapper here.',
-    );
+    return new ChonkieChunker(chunkSize, chunkOverlap);
   }
+  return new LangChainChunker(chunkSize, chunkOverlap);
+}
 
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize,
-    chunkOverlap,
-    separators: ['\n\n', '\n', ' ', ''],
-  });
-
-  const docs = documents.map((doc) => ({
-    pageContent: doc.pageContent,
-    metadata: doc.metadata ?? {},
-  }));
-
-  const chunks = await splitter.splitDocuments(docs as any);
-
-  return chunks.map((chunk) => chunk.pageContent);
+export function toLangChainDocument(chunk: TextChunk): Document {
+  return new Document({ pageContent: chunk.text, metadata: chunk.metadata });
 }

@@ -1,49 +1,81 @@
 # IngestorX
 
-IngestorX este un starter TypeScript pentru ingestie de documente web și chunk-uri în baze vectoriale, cu suport pentru:
+IngestorX este un pipeline TypeScript extensibil pentru ingestia de documente în baze vectoriale. Folosește **LangChain** pentru încărcarea paginilor web și embeddings, permite alegerea între chunking-ul **Chonkie.js** și cel LangChain, iar stocarea este abstractizată printr-o interfață comună.
 
-- LangChain pentru loaders + chunking
-- Chonkie.js hook pentru chunking alternativ
-- OpenAI embeddings
-- Qdrant ca vector store
-- extensie pentru alte baze vectoriale
+## Pipeline
 
-## Ce face
+`URL → LangChain loader → Chonkie.js / LangChain chunker → OpenAI embeddings → VectorStore → Qdrant`
 
-- extrage text din URL-uri web
-- împarte documentul în chunk-uri
-- generează embedding-uri
-- salvează în Qdrant
-- poți extinde cu MongoDB, Pinecone, Weaviate, Milvus etc.
+- **Chonkie.js** (`@chonkiejs/core`): chunking local prin `TokenChunker`, cu overlap și tokenizer bazat pe caractere.
+- **LangChain**: Cheerio web loader, RecursiveCharacterTextSplitter și OpenAI embeddings.
+- **VectorStore**: interfață cu operații `ensureCollection`, `upsert` și `search`.
+- **Qdrant**: adaptor implicit, creează colecția dacă lipsește.
+- **LangChain vector stores**: adaptor pentru instanțe compatibile cu `addVectors` și `similaritySearchVectorWithScore`; configurarea providerului rămâne la aplicația gazdă.
 
-## Structura proiectului
+> Chonkie TokenChunker folosește un tokenizer bazat pe caractere în configurația implicită; `CHUNK_SIZE` și `CHUNK_OVERLAP` sunt dimensiuni măsurate de acel tokenizer, nu promisiune de tokeni ai modelului de embedding.
 
-- `src/index.ts` – CLI entrypoint
-- `src/ingest.ts` – logica principală de ingest
-- `src/config.ts` – variabile de mediu
-- `src/chunking/index.ts` – wrapper pentru chunking
-- `src/vector/qdrant.ts` – client Qdrant
-- `src/types.ts` – tipuri centrale
-
-## Instalare
+## Instalare și configurare
 
 ```bash
 npm install
 cp .env.example .env
 ```
 
-Apoi completează variabilele din `.env`.
-
-## Pornire Qdrant local
+Setează `OPENAI_API_KEY`. Pentru Qdrant local:
 
 ```bash
 docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
-## Exemplu de ingestie
+## Utilizare CLI
 
 ```bash
 npm run ingest -- https://example.com
+```
+
+Variabilele din `.env`:
+
+| Variabilă | Implicit | Descriere |
+|---|---:|---|
+| `OPENAI_API_KEY` | — | Cheia API pentru embeddings |
+| `QDRANT_URL` | `http://localhost:6333` | URL-ul Qdrant |
+| `QDRANT_API_KEY` | gol | Cheia Qdrant, dacă este necesară |
+| `QDRANT_COLLECTION` | `docs_chunks` | Colecția țintă |
+| `CHUNKING_MODE` | `chonkie` | `chonkie` sau `langchain` |
+| `CHUNK_SIZE` | `800` | Dimensiunea chunk-ului |
+| `CHUNK_OVERLAP` | `120` | Overlap; trebuie să fie sub `CHUNK_SIZE` |
+| `INGEST_BATCH_SIZE` | `64` | Numărul de chunk-uri procesate pe lot |
+
+## Folosire din cod și conectare la alt vector store
+
+`ingestUrl` acceptă un `VectorStore` injectat; implementarea trebuie să asigure indexul, să scrie vectori și să returneze rezultatele căutării. Astfel, logica de încărcare, chunking și embedding nu depinde de Qdrant.
+
+```ts
+import { ingestUrl } from './src/ingest.js';
+import type { VectorStore } from './src/types.js';
+
+const customStore: VectorStore = {
+  async ensureCollection(vectorSize) {
+    // Creează/verifică indexul în providerul tău.
+  },
+  async upsert(points) {
+    // Persistă id, vector și payload.
+  },
+  async search(vector, limit) {
+    // Returnează [{ id, score, payload }].
+    return [];
+  },
+};
+
+await ingestUrl('https://example.com', { vectorStore: customStore });
+```
+
+Pentru un store LangChain existent, `LangChainVectorStoreAdapter` îl adaptează dacă oferă `addVectors` și `similaritySearchVectorWithScore`. Store-ul trebuie creat/configurat de aplicație înainte de injectare.
+
+```ts
+import { LangChainVectorStoreAdapter } from './src/vector/langchain-adapter.js';
+const vectorStore = new LangChainVectorStoreAdapter(existingLangChainStore);
+await ingestUrl('https://example.com', { vectorStore });
 ```
 
 ## Build
@@ -52,18 +84,4 @@ npm run ingest -- https://example.com
 npm run build
 ```
 
-## Notes
-
-- Mod implicit: `CHUNKING_MODE=langchain`
-- Puteți înlocui chunking-ul cu un wrapper Chonkie.js în `src/chunking/index.ts`
-- Interfața VectorStore e gata de extindere pentru alte baze vectoriale
-
-## Exemplu de integrare Chonkie
-
-În `src/chunking/index.ts` poți injecta o implementare Chonkie fără să schimbi logica de ingestie.
-
-```ts
-if (mode === 'chonkie') {
-  // return await chonkieChunk(text)
-}
-```
+URL-urile sunt limitate la HTTP/HTTPS. Folosește numai surse pe care ai dreptul să le accesezi și indexezi.

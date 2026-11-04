@@ -1,15 +1,16 @@
 {
   "name": "ingestorx",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "ingest": "tsx src/index.ts ingest"
+    "ingest": "tsx src/index.ts"
   },
   "dependencies": {
+    "@chonkiejs/core": "^0.0.12",
     "@langchain/community": "^0.3.49",
     "@langchain/core": "^0.3.39",
     "@langchain/openai": "^0.3.19",
